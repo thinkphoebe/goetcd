@@ -187,7 +187,7 @@ func (this *Etcd) WatchCallback(key, action string, prefix bool, callback func(k
 			}
 		}
 	}
-	log.Warnf("[etcd][SLA] WatchCallback complete. key:%s, action:%s, prefix:%v", key, action, prefix)
+	log.Infof("[etcd][SLA] WatchCallback complete. key:%s, action:%s, prefix:%v", key, action, prefix)
 }
 
 func (this *Etcd) WatchVisitor(key, action string, prefix bool, visitor EtcdVisitor, ctx context.Context) {
@@ -227,7 +227,7 @@ func (this *Etcd) WalkCallback(prefix string, callback func(key string, val []by
 		}
 
 		for _, kv := range out.Kvs {
-			log.Debugf("[etcd] WalkVisitor - prefix [%s] keyStart [%s] got [%s:%s]", prefix, keyStart, kv.Key, kv.Value)
+			log.Debugf("[etcd] WalkVisitor - prefix [%s] keyStart [%s] got k[%s], v[%s]", prefix, keyStart, kv.Key, kv.Value)
 			if limit > 0 {
 				limit--
 			}
