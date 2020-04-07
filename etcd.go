@@ -33,7 +33,7 @@ func (this *Etcd) Init(endpoints []string, timeout time.Duration) error {
 	})
 	this.timeout = timeout
 	if err != nil {
-		log.Fatalf("[etcd][SLA] clientv3.New got err [%v]", err)
+		log.Criticalf("[etcd][SLA] clientv3.New got err [%v]", err)
 	}
 	return err
 }
