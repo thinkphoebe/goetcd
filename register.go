@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/coreos/etcd/clientv3"
-	"github.com/thinkphoebe/goetcd"
 	log "github.com/thinkphoebe/golog"
 )
 
