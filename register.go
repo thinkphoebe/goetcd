@@ -51,10 +51,43 @@ func (self *Register) putWithLease(target *RegisterInfo) (clientv3.LeaseID, erro
 }
 
 func (self *Register) Start() {
+	update := func(target *RegisterInfo) {
+		if !target.inited {
+			log.Infof("[%s] not inited, try init", target.Name)
+			err := target.etcd.Init(target.Endpoints, target.Timeout)
+			if err != nil {
+				log.Errorf("[%s] etcd.Init got err [%s], Endpoints [%#v], DialTimeout [%d]",
+					target.Name, err.Error(), target.Endpoints, target.Timeout)
+				return
+			} else {
+				log.Infof("[%s] inited SUCCEED", target.Name)
+				target.inited = true
+			}
+		}
+		if target.inited {
+			if target.leaseID == 0 {
+				log.Infof("[%s] no leaseId, put register info [%s][%s]",
+					target.Name, target.Key, target.Value)
+				target.leaseID, _ = self.putWithLease(target)
+				if target.leaseID != 0 {
+					log.Infof("[%s] leaseId:%d", target.Name, target.leaseID)
+				}
+			} else {
+				resp, err := target.etcd.Client.KeepAliveOnce(context.TODO(), target.leaseID)
+				if err != nil {
+					log.Errorf("[%s] keepalive got error [%v]", target.Name, err)
+					target.leaseID = 0
+				} else {
+					log.Infof("[%s] keepalive ok, TTL:%d", target.Name, resp.TTL)
+				}
+			}
+		}
+	}
+
 	run := func(target *RegisterInfo) {
 		ticker := time.NewTicker(time.Second * time.Duration(target.TTL) * 3 / 4)
 		tickChan := ticker.C
-
+		update(target)
 		for {
 			select {
 			case <-target.chExit:
@@ -67,38 +100,8 @@ func (self *Register) Start() {
 					ticker.Stop()
 					return
 				}
-
 			case <-tickChan:
-				if !target.inited {
-					log.Infof("[%s] not inited, try init", target.Name)
-					err := target.etcd.Init(target.Endpoints, target.Timeout)
-					if err != nil {
-						log.Errorf("[%s] etcd.Init got err [%s], Endpoints [%#v], DialTimeout [%d]",
-							target.Name, err.Error(), target.Endpoints, target.Timeout)
-						continue
-					} else {
-						log.Infof("[%s] inited SUCCEED", target.Name)
-						target.inited = true
-					}
-				}
-				if target.inited {
-					if target.leaseID == 0 {
-						log.Infof("[%s] no leaseId, put register info [%s][%s]",
-							target.Name, target.Key, target.Value)
-						target.leaseID, _ = self.putWithLease(target)
-						if target.leaseID != 0 {
-							log.Infof("[%s] leaseId:%d", target.Name, target.leaseID)
-						}
-					} else {
-						resp, err := target.etcd.Client.KeepAliveOnce(context.TODO(), target.leaseID)
-						if err != nil {
-							log.Errorf("[%s] keepalive got error [%v]", target.Name, err)
-							target.leaseID = 0
-						} else {
-							log.Infof("[%s] keepalive ok, TTL:%d", target.Name, resp.TTL)
-						}
-					}
-				}
+				update(target)
 			}
 		}
 	}
