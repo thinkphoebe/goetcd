@@ -195,7 +195,7 @@ func (this *Etcd) WatchVisitor(key, action string, prefix bool, visitor EtcdVisi
 }
 
 func (this *Etcd) WalkCallback(prefix string, callback func(key string, val []byte) bool,
-	limit int64, opts []clientv3.OpOption) error {
+		limit int64, opts []clientv3.OpOption) error {
 	allOpts := []clientv3.OpOption{}
 	allOpts = append(allOpts, clientv3.WithPrefix())
 	allOpts = append(allOpts, clientv3.WithRange(clientv3.GetPrefixRangeEnd(prefix)))
@@ -243,4 +243,61 @@ func (this *Etcd) WalkCallback(prefix string, callback func(key string, val []by
 
 func (this *Etcd) WalkVisitor(prefix string, visitor EtcdVisitor, limit int64, opts []clientv3.OpOption) error {
 	return this.WalkCallback(prefix, visitor.Visit, limit, opts)
+}
+
+// 通过写入key并watch写入值的方式监控和etcd的连接是否正常
+// 之前有遇到过watch收不到etcd回调的情况但也没返回错误的情况，不确定这样做是否能检测出该情况
+func (this *Etcd) StartKeepalive(key string, checkInterval time.Duration, maxFailCount int) chan interface{} {
+	chResult := make(chan interface{}, 100)
+
+	// write check
+	go func() {
+		failCount := 0
+		for {
+			if err := this.Put(key, time.Now().String(), int64(checkInterval)+600); err != nil {
+				log.Errorf("write_keepalive_fail, fail_count:%d, max_fail:%d, err:%v", failCount, maxFailCount, err)
+				failCount += 1
+			} else {
+				log.Infof("write_keepalive_succeed, fail_count:%d", failCount)
+				failCount = 0
+			}
+			if failCount >= maxFailCount {
+				log.Criticalf("write keepalive failed too many, fail_count:%d, max_fail:%d", failCount, maxFailCount)
+				chResult <- struct{}{}
+			}
+			time.Sleep(time.Second * checkInterval)
+		}
+	}()
+
+	// watch check
+	go func() {
+		ch := make(chan string, 100)
+		onKeepAlive := func(key string, val []byte) bool {
+			msg := string(val)
+			log.Infof("read_keepalive_succeed, now:%d", time.Now().Unix())
+			ch <- msg
+			return true
+		}
+		go this.WatchCallback(key, "PUT", true, onKeepAlive, nil)
+
+		tickChan := time.NewTicker(time.Second * checkInterval).C
+		lastUpdate := time.Now().Unix()
+		for {
+			select {
+			case <-ch:
+				lastUpdate = time.Now().Unix()
+			case <-tickChan:
+				if time.Now().Unix()-lastUpdate > int64(checkInterval)*int64(maxFailCount) {
+					log.Criticalf("read keepalive failed long time, now:%d, last_update:%d, max_fail:%d",
+						time.Now().Unix(), lastUpdate, maxFailCount)
+					chResult <- struct{}{}
+				} else {
+					log.Infof("check_keepalive_succeed, now:%d, last_update:%d, max_fail:%d",
+						time.Now().Unix(), lastUpdate, maxFailCount)
+				}
+			}
+		}
+	}()
+
+	return chResult
 }
