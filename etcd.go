@@ -247,9 +247,7 @@ func (this *Etcd) WalkVisitor(prefix string, visitor EtcdVisitor, limit int64, o
 
 // 通过写入key并watch写入值的方式监控和etcd的连接是否正常
 // 之前有遇到过watch收不到etcd回调的情况但也没返回错误的情况，不确定这样做是否能检测出该情况
-func (this *Etcd) StartKeepalive(key string, checkInterval time.Duration, maxFailCount int) chan interface{} {
-	chResult := make(chan interface{}, 100)
-
+func (this *Etcd) StartKeepalive(key string, checkInterval time.Duration, maxFailCount int, callback func()) {
 	// write check
 	go func() {
 		failCount := 0
@@ -263,7 +261,7 @@ func (this *Etcd) StartKeepalive(key string, checkInterval time.Duration, maxFai
 			}
 			if failCount >= maxFailCount {
 				log.Criticalf("write keepalive failed too many, fail_count:%d, max_fail:%d", failCount, maxFailCount)
-				chResult <- struct{}{}
+				callback()
 			}
 			time.Sleep(time.Second * checkInterval)
 		}
@@ -290,7 +288,7 @@ func (this *Etcd) StartKeepalive(key string, checkInterval time.Duration, maxFai
 				if time.Now().Unix()-lastUpdate > int64(checkInterval)*int64(maxFailCount) {
 					log.Criticalf("read keepalive failed long time, now:%d, last_update:%d, max_fail:%d",
 						time.Now().Unix(), lastUpdate, maxFailCount)
-					chResult <- struct{}{}
+					callback()
 				} else {
 					log.Infof("check_keepalive_succeed, now:%d, last_update:%d, max_fail:%d",
 						time.Now().Unix(), lastUpdate, maxFailCount)
@@ -298,6 +296,4 @@ func (this *Etcd) StartKeepalive(key string, checkInterval time.Duration, maxFai
 			}
 		}
 	}()
-
-	return chResult
 }
