@@ -194,8 +194,14 @@ func (this *Etcd) WatchVisitor(key, action string, prefix bool, visitor EtcdVisi
 	this.WatchCallback(key, action, prefix, visitor.Visit, ctx)
 }
 
+// limit
+// 		walk的最大数量
+// pageSize
+// 		分页读取，避免匹配prefix的key数量过于庞大时有问题，但不要和sort同时使用
+// 		etcd的sort是对匹配key range的key做排序，而分页时会改变key range，无法返回正确的结果
+// 调用方可通过在callback返回false终止walk
 func (this *Etcd) WalkCallback(prefix string, callback func(key string, val []byte) bool,
-		limit int64, opts []clientv3.OpOption) error {
+		limit, pageSize int64, opts []clientv3.OpOption) error {
 	allOpts := []clientv3.OpOption{}
 	allOpts = append(allOpts, clientv3.WithPrefix())
 	allOpts = append(allOpts, clientv3.WithRange(clientv3.GetPrefixRangeEnd(prefix)))
@@ -205,15 +211,12 @@ func (this *Etcd) WalkCallback(prefix string, callback func(key string, val []by
 
 	keyStart := prefix
 	for {
-		if limit == 0 {
-			break
-		}
-		optLimit := clientv3.WithLimit(500)
-		if limit > 0 && limit < 500 {
-			optLimit = clientv3.WithLimit(limit)
-		}
 		thisOpts := allOpts[:]
-		thisOpts = append(thisOpts, optLimit)
+		if limit > 0 && (limit < pageSize || pageSize == 0) {
+			thisOpts = append(thisOpts, clientv3.WithLimit(limit))
+		} else if pageSize > 0 {
+			thisOpts = append(thisOpts, clientv3.WithLimit(pageSize))
+		}
 
 		ctx, cancel := newContexTimeout(this.timeout)
 		out, err := this.Client.Get(ctx, keyStart, thisOpts...)
@@ -232,17 +235,21 @@ func (this *Etcd) WalkCallback(prefix string, callback func(key string, val []by
 				limit--
 			}
 			if !callback(string(kv.Key), kv.Value) {
-				log.Errorf("[etcd][SLA] WalkVisitor - canceled by visitor")
+				log.Infof("[etcd][SLA] WalkVisitor - canceled by visitor")
 				return nil
 			}
+		}
+
+		if pageSize <= 0 || limit == 0 {
+			break
 		}
 		keyStart = string(out.Kvs[len(out.Kvs)-1].Key) + "\x00"
 	}
 	return nil
 }
 
-func (this *Etcd) WalkVisitor(prefix string, visitor EtcdVisitor, limit int64, opts []clientv3.OpOption) error {
-	return this.WalkCallback(prefix, visitor.Visit, limit, opts)
+func (this *Etcd) WalkVisitor(prefix string, visitor EtcdVisitor, limit, pageSize int64, opts []clientv3.OpOption) error {
+	return this.WalkCallback(prefix, visitor.Visit, limit, pageSize, opts)
 }
 
 // 通过写入key并watch写入值的方式监控和etcd的连接是否正常
