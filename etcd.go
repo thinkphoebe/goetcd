@@ -22,7 +22,7 @@ func newContexTimeout(timeout time.Duration) (context.Context, context.CancelFun
 	if timeout <= 0 {
 		return context.TODO(), nil
 	}
-	return context.WithTimeout(context.TODO(), time.Duration(timeout)*time.Second)
+	return context.WithTimeout(context.TODO(), timeout*time.Second)
 }
 
 func (this *Etcd) Init(endpoints []string, timeout time.Duration) error {
@@ -116,8 +116,13 @@ func (this *Etcd) Del(key string, prefix bool) (int64, error) {
 	if cancel != nil {
 		cancel()
 	}
-	log.Debugf("[etcd] Del - key [%s], count [%d], err [%v]", key, resp.Del().Deleted, err)
-	return resp.Del().Deleted, err
+	if err == nil {
+		log.Debugf("[etcd] Del OK - key [%s], count [%d]", key, resp.Del().Deleted)
+		return resp.Del().Deleted, err
+	} else {
+		log.Errorf("[etcd] Del FAILED - key [%s], err [%v]", key, err)
+		return 0, err
+	}
 }
 
 func (this *Etcd) Count(prefix string) (int64, error) {
@@ -138,8 +143,12 @@ func (this *Etcd) Version(key string) (int64, int64, int64, error) {
 	ctx, cancel := newContexTimeout(this.timeout)
 	out, err := this.Client.Get(ctx, key)
 	cancel()
-	if err != nil || len(out.Kvs) == 0 {
-		log.Errorf("[etcd][SLA] Version - cli.Get [%s] got error [%v], kvs len [%d]", key, err, len(out.Kvs))
+	if err != nil {
+		log.Errorf("[etcd][SLA] Version - cli.Get [%s] got error [%v]", key, err)
+		return 0, 0, 0, err
+	}
+	if len(out.Kvs) == 0 {
+		log.Warnf("[etcd][SLA] Version - cli.Get [%s] got nothing", key, err)
 		return 0, 0, 0, err
 	}
 	return out.Kvs[0].CreateRevision, out.Kvs[0].ModRevision, out.Kvs[0].Version, nil
