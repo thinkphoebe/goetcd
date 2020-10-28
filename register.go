@@ -39,9 +39,7 @@ func (self *Register) putWithLease(target *RegisterInfo) (clientv3.LeaseID, erro
 	op := clientv3.OpPut(target.Key, target.Value, opts...)
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*target.Timeout)
 	_, err = target.etcd.Client.Do(ctx, op)
-	if cancel != nil {
-		cancel()
-	}
+	cancel()
 	if err != nil {
 		log.Errorf("[%s] GEtcd.Client.Do got err [%v]", target.Name, err)
 		return 0, err

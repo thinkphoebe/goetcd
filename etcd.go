@@ -63,9 +63,7 @@ func (this *Etcd) Put(key, val string, ttl int64) error {
 	}
 	ctx, cancel := newContexTimeout(this.timeout)
 	_, err = this.Client.Do(ctx, *op)
-	if cancel != nil {
-		cancel()
-	}
+	cancel()
 	log.Debugf("[etcd] Put - key [%s], val [%s], ttl [%d], err [%v]", key, val, ttl, err)
 	return err
 }
@@ -83,9 +81,7 @@ func (this *Etcd) Get(key string, prefix bool) ([][]byte, error) {
 	op := this.OpGet(key, prefix)
 	ctx, cancel := newContexTimeout(this.timeout)
 	resp, err := this.Client.Do(ctx, *op)
-	if cancel != nil {
-		cancel()
-	}
+	cancel()
 	if err != nil {
 		log.Errorf("[etcd][SLA] Get - key [%s], prefix [%t], err [%v]", key, prefix, err)
 		return nil, err
@@ -113,9 +109,7 @@ func (this *Etcd) Del(key string, prefix bool) (int64, error) {
 	op := this.OpDel(key, prefix)
 	ctx, cancel := newContexTimeout(this.timeout)
 	resp, err := this.Client.Do(ctx, *op)
-	if cancel != nil {
-		cancel()
-	}
+	cancel()
 	if err == nil {
 		log.Debugf("[etcd] Del OK - key [%s], count [%d]", key, resp.Del().Deleted)
 		return resp.Del().Deleted, err
